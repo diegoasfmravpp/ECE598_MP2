@@ -44,19 +44,27 @@ def plot_signals(time, voltage_signal, current_signal):
     plt.tight_layout()
     plt.show()
 
-def plot_bode(freq, magnitude, phase):
-
-    smoothed_magnitude, smoothed_phase = smooth_impedance(magnitude, phase)
+def plot_bode(high_freq, freq, magnitude, phase, smooth_impedance, smoothed_phase, Zmax=None, fs=None, Re=None, f1=None, f2=None):
 
     fig, axes = plt.subplots(2, 1, figsize=(10, 6), sharex=True)
     
     # Magnitude plot
     axes[0].semilogx(freq, magnitude, label='raw')  # Linear magnitude
     axes[0].semilogx(freq, smoothed_magnitude, label='smoothed')  # Linear magnitude
+
+    if Zmax is not None:    
+        axes[0].axhline(y=Zmax, color='b', linestyle='dotted', linewidth=2, label="Zmax: " + str(round(Zmax,2)))
+        axes[0].axvline(x=fs, color='g', linestyle='dotted', linewidth=2, label="fs: " + str(round(fs,2)))
+       
+    if Re is not None:
+        axes[0].axhline(y=Re, color='r', linestyle='dotted', linewidth=2, label="Re: " + str(round(Re,2)))
+        axes[0].axvline(x=f1, color='y', linestyle='dotted', linewidth=2, label="f1: " + str(round(f1,2)))
+        axes[0].axvline(x=f2, color='y', linestyle='dotted', linewidth=2, label="f2: " + str(round(f2,2)))
+     
     axes[0].legend()
     axes[0].set_ylabel("Magnitude (Ohms)")
     axes[0].set_ylim(7, 25)  
-    axes[0].set_xlim(10, 500)  # Limits x-axis from 10 Hz to 500Hz
+    axes[0].set_xlim(10, high_freq)  # Limits x-axis from 10 Hz to 500Hz
     axes[0].grid(True, which="both", linestyle="--")
     axes[0].set_title("Bode Plot of Impedance")
 
@@ -72,14 +80,49 @@ def plot_bode(freq, magnitude, phase):
     plt.tight_layout()
     plt.show()
 
+def q_factors(freq, smooth_impedance):
+    last_fs = np.argmin(np.abs(freq - 500))
+    # print("last_fs: " + str(last_fs))
+    Z_magnitude = np.abs(smooth_impedance[:last_fs])
+    fs_index = np.argmax(Z_magnitude)  	# Resonance frequency index
+    fs = freq[fs_index]  # Resonance frequency (Hz)
+
+    Zmax = Z_magnitude[fs_index]  		# Maximum impedance at resonance
+
+    # avg impedance 10-40 Hz from narrow BW exp = 7.51
+    indices = (freq[:last_fs] >= 10) & (freq[:last_fs] <= 40)
+    Re = np.mean(Z_magnitude[indices])
+
+    # print("fs_index: " + str(fs_index))
+    print("fs: " + str(fs))
+    print("zmax: " + str(Zmax))
+    print("Re: " + str(Re))
+
+    Z1_2 = np.sqrt(Re * Zmax) 	 # Side impedance magnitude levels
+    
+    # Find f1 and f2 where impedance equals Z1_2
+    f1_index = np.where(Z_magnitude[:fs_index] >= Z1_2)[0][0]
+    f2_index = np.where(Z_magnitude[fs_index:] <= Z1_2)[0][0] + fs_index
+    f1, f2 = freq[f1_index], freq[f2_index]
+
+    Qms = fs/(f2-f1)*Zmax/Re 
+    Qes = Qms * (Zmax/Re - 1) 
+    Qts =(Qms * Qes) / (Qms + Qes) 
+
+    print("Qms: " + str(Qms))
+    print("Qes: " + str(Qes))
+    print("Qts: " + str(Qts))
+    return Qms, Qes, Qts, Zmax, fs, Re, f1, f2
+
 if __name__=='__main__':
     filename = None
 
-    if len(sys.argv) < 2:
-        print("no wav file passed. Exiting...")
+    if len(sys.argv) < 3:
+        print("no wav file or highest frequency passed. Exiting...")
         sys.exit(1)
     else:
         filename = sys.argv[1]
+        high_freq = float(sys.argv[2])
 
     sample_rate, data = wav.read(filename)
 
@@ -93,8 +136,8 @@ if __name__=='__main__':
     current_signal_amps = current_signal_int * LSB_Amps  # Convert to Amps
 
     # Compute ffts
-    freq_voltage, fft_voltage = compute_fft(voltage_signal_volts, sample_rate)
-    freq_current, fft_current = compute_fft(current_signal_amps, sample_rate)
+    freq, fft_voltage = compute_fft(voltage_signal_volts, sample_rate)
+    _, fft_current = compute_fft(current_signal_amps, sample_rate)
 
     # Compute impedance
     impedance = fft_voltage / fft_current
@@ -103,8 +146,19 @@ if __name__=='__main__':
     magnitude = np.abs(impedance)		# Returns complex magnitude
     phase = np.angle(impedance, deg=True)	# Returns complex phase, in degrees
 
-    time = np.linspace(0, len(voltage_signal_volts) / sample_rate, num=len(voltage_signal_volts))
+    smoothed_magnitude, smoothed_phase = smooth_impedance(magnitude, phase)
 
-    # plots
+    # Q factors and plots
+
+    if filename == "narrow_bandwidth.wav":
+        Qms, Qes, Qts, Zmax, fs, Re, f1, f2 = q_factors(freq, smoothed_magnitude)
+        plot_bode(high_freq, freq, magnitude, phase, smooth_impedance, smoothed_phase, Zmax, fs, Re, f1, f2)
+    elif filename == "added_mass.wav":
+        Qms, Qes, Qts, Zmax, fs, Re, f1, f2 = q_factors(freq, smoothed_magnitude)
+        plot_bode(high_freq, freq, magnitude, phase, smooth_impedance, smoothed_phase, Zmax, fs)
+    else:
+        plot_bode(high_freq, freq, magnitude, phase, smooth_impedance, smoothed_phase)
+
+    # time = np.linspace(0, len(voltage_signal_volts) / sample_rate, num=len(voltage_signal_volts))
     # plot_signals(time, voltage_signal_volts, current_signal_amps)
-    plot_bode(freq_voltage, magnitude, phase)
+
