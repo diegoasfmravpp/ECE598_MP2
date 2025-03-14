@@ -4,6 +4,8 @@ import matplotlib.pyplot as plt			# Plotting 2D plots
 from scipy.fft import fft, fftfreq			# Taking 1-sided FFT
 from scipy.signal import filtfilt, butter		# Smoothing data with filtfilt zero-phase filter
 import sys
+import json
+import os
 
 def compute_fft(signal, sample_rate):
     N = len(signal)
@@ -25,6 +27,29 @@ def smooth_impedance(magnitude, phase, cutoff=0.1, order=2):
     # Reform complex impedance with magnitude and complex exponential
     # return smoothed_magnitude * np.exp(1j * np.radians(smoothed_phase)) 
     return smoothed_magnitude, smoothed_phase
+
+def process_raw_data(sample_rate, data):
+    voltage_signal_int = data[:, 0].astype(np.int16)  # First channel as voltage
+    current_signal_int = data[:, 1].astype(np.int16)  # Second channel as current
+
+    LSB_Volts = 11.0 / 32768  # Least Significant Bit size
+    voltage_signal_volts = voltage_signal_int * LSB_Volts  # Convert to Volts
+            
+    LSB_Amps = 3.0 / 32768  # Least Significant Bit size
+    current_signal_amps = current_signal_int * LSB_Amps  # Convert to Amps
+
+    # Compute ffts
+    freq, fft_voltage = compute_fft(voltage_signal_volts, sample_rate)
+    _, fft_current = compute_fft(current_signal_amps, sample_rate)
+
+    # Compute impedance
+    impedance = fft_voltage / fft_current
+
+    # Find impedance magnitude and phase
+    magnitude = np.abs(impedance)		# Returns complex magnitude
+    phase = np.angle(impedance, deg=True)	# Returns complex phase, in degrees
+
+    return freq, magnitude, phase
 
 def plot_signals(time, voltage_signal, current_signal):
     print("Plotting signals...")
@@ -80,7 +105,7 @@ def plot_bode(high_freq, freq, magnitude, phase, smooth_impedance, smoothed_phas
     plt.tight_layout()
     plt.show()
 
-def q_factors(freq, smooth_impedance):
+def q_factors(freq, smooth_impedance, Re=None):
     last_fs = np.argmin(np.abs(freq - 500))
     # print("last_fs: " + str(last_fs))
     Z_magnitude = np.abs(smooth_impedance[:last_fs])
@@ -90,8 +115,9 @@ def q_factors(freq, smooth_impedance):
     Zmax = Z_magnitude[fs_index]  		# Maximum impedance at resonance
 
     # avg impedance 10-40 Hz from narrow BW exp = 7.51
-    indices = (freq[:last_fs] >= 10) & (freq[:last_fs] <= 40)
-    Re = np.mean(Z_magnitude[indices])
+    if Re is None:
+        indices = (freq[:last_fs] >= 10) & (freq[:last_fs] <= 40)
+        Re = np.mean(Z_magnitude[indices])
 
     # print("fs_index: " + str(fs_index))
     print("fs: " + str(fs))
@@ -114,6 +140,47 @@ def q_factors(freq, smooth_impedance):
     print("Qts: " + str(Qts))
     return Qms, Qes, Qts, Zmax, fs, Re, f1, f2
 
+def save_values(filename, Zmax, fs, Re=None, f1=None, f2=None, Qms=None, Qes=None, Qts=None):
+
+    # JSON file path
+    json_file = "saved_values.json"
+
+    # Load existing data if the file exists
+    if os.path.exists(json_file):
+        with open(json_file, "r") as f:
+            try:
+                data = json.load(f)  # Read existing JSON
+            except json.JSONDecodeError:
+                data = []  # If the file is empty or corrupted, start fresh
+    else:
+        data = []  # If file doesn't exist, start with an empty list
+
+    # New calculated values (example) Qms, Qes, Qts, Zmax, fs, Re, f1, f2
+    if Re is None:
+        new_entry = {"filename": filename, "Zmax": Zmax, "fs": fs}
+    else:
+        new_entry = {"filename": filename, "Zmax": Zmax, "fs": fs, "Re": Re, "f1": f1, "f2": f2, "Qms": Qms, "Qes": Qes, "Qts": Qts}
+    
+
+    # Convert list to dictionary for easier updating
+    data_dict = {entry["filename"]: entry for entry in data}
+
+    # Update or insert new entry
+    data_dict[new_entry["filename"]] = new_entry
+
+    # Convert back to list format
+    updated_data = list(data_dict.values())
+
+    # Write back to JSON
+    with open(json_file, "w") as f:
+        json.dump(updated_data, f, indent=4)
+
+    print(f"Saved entry: {new_entry}")
+
+def other_factors():
+    
+
+
 if __name__=='__main__':
     filename = None
 
@@ -126,39 +193,23 @@ if __name__=='__main__':
 
     sample_rate, data = wav.read(filename)
 
-    voltage_signal_int = data[:, 0].astype(np.int16)  # First channel as voltage
-    current_signal_int = data[:, 1].astype(np.int16)  # Second channel as current
-
-    LSB_Volts = 11.0 / 32768  # Least Significant Bit size
-    voltage_signal_volts = voltage_signal_int * LSB_Volts  # Convert to Volts
-            
-    LSB_Amps = 3.0 / 32768  # Least Significant Bit size
-    current_signal_amps = current_signal_int * LSB_Amps  # Convert to Amps
-
-    # Compute ffts
-    freq, fft_voltage = compute_fft(voltage_signal_volts, sample_rate)
-    _, fft_current = compute_fft(current_signal_amps, sample_rate)
-
-    # Compute impedance
-    impedance = fft_voltage / fft_current
-
-    # Find impedance magnitude and phase
-    magnitude = np.abs(impedance)		# Returns complex magnitude
-    phase = np.angle(impedance, deg=True)	# Returns complex phase, in degrees
+    freq, magnitude, phase = process_raw_data(sample_rate, data)
 
     smoothed_magnitude, smoothed_phase = smooth_impedance(magnitude, phase)
 
     # Q factors and plots
-
     if filename == "narrow_bandwidth.wav":
         Qms, Qes, Qts, Zmax, fs, Re, f1, f2 = q_factors(freq, smoothed_magnitude)
         plot_bode(high_freq, freq, magnitude, phase, smooth_impedance, smoothed_phase, Zmax, fs, Re, f1, f2)
+        save_values(filename, Zmax, fs, Re, f1, f2, Qms, Qes, Qts)
     elif filename == "added_mass.wav":
-        Qms, Qes, Qts, Zmax, fs, Re, f1, f2 = q_factors(freq, smoothed_magnitude)
+        Qms, Qes, Qts, Zmax, fs, Re, f1, f2 = q_factors(freq, smoothed_magnitude, 7.51)
         plot_bode(high_freq, freq, magnitude, phase, smooth_impedance, smoothed_phase, Zmax, fs)
+        save_values(filename, Zmax, fs)
     else:
         plot_bode(high_freq, freq, magnitude, phase, smooth_impedance, smoothed_phase)
 
     # time = np.linspace(0, len(voltage_signal_volts) / sample_rate, num=len(voltage_signal_volts))
     # plot_signals(time, voltage_signal_volts, current_signal_amps)
 
+    
