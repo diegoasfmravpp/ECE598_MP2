@@ -241,8 +241,8 @@ def plot_model(high_freq, freq, magnitude, phase, modeled_impedance, modeled_pha
     fig, axes = plt.subplots(2, 1, figsize=(10, 6), sharex=True)
     
     # Magnitude plot
-    axes[0].semilogx(freq, magnitude, label='measured')  # Linear magnitude
-    axes[0].semilogx(freq, modeled_impedance, label='modeled')  # Linear magnitude
+    axes[0].semilogx(freq, magnitude, label='Measured impedance')  # Linear magnitude
+    axes[0].semilogx(freq, modeled_impedance, linestyle="--", label='Modeled impedance')  # Linear magnitude
     axes[0].legend()
     axes[0].set_ylabel("Magnitude (Ohms)")
     axes[0].set_ylim(7, 25)  
@@ -251,8 +251,8 @@ def plot_model(high_freq, freq, magnitude, phase, modeled_impedance, modeled_pha
     axes[0].set_title("Bode Plot of Impedance")
 
     # Phase plot
-    axes[1].semilogx(freq, phase, label='measured')  # Phase in degrees
-    axes[1].semilogx(freq, modeled_phase, label='modeled')  # Phase in degrees
+    axes[1].semilogx(freq, phase, label='Measured phase')  # Phase in degrees
+    axes[1].semilogx(freq, modeled_phase, linestyle="--", label='Modeled phase')  # Phase in degrees
     axes[1].legend()
     axes[1].set_ylim(-90, 90)  
     axes[1].set_xlabel("Frequency (Hz)")
