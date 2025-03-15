@@ -69,7 +69,7 @@ def plot_signals(time, voltage_signal, current_signal):
     plt.tight_layout()
     plt.show()
 
-def plot_bode(high_freq, freq, magnitude, phase, smooth_impedance, smoothed_phase, Zmax=None, fs=None, Re=None, f1=None, f2=None):
+def plot_bode(high_freq, freq, magnitude, phase, smoothed_magnitude, smoothed_phase, Zmax=None, fs=None, Re=None, f1=None, f2=None):
 
     fig, axes = plt.subplots(2, 1, figsize=(10, 6), sharex=True)
     
@@ -178,8 +178,89 @@ def save_values(filename, Zmax, fs, Re=None, f1=None, f2=None, Qms=None, Qes=Non
     print(f"Saved entry: {new_entry}")
 
 def other_factors():
-    
 
+    # JSON file path
+    json_file = "saved_values.json"
+    if os.path.exists(json_file):
+        with open(json_file, "r") as f:
+            try:
+                data = json.load(f)  # Read existing JSON
+            except json.JSONDecodeError:
+                return "Not found"
+
+    # Use the data
+    if isinstance(data, list):  # If the JSON is a list
+        for entry in data:
+            filename = entry.get('filename')
+            if filename == "narrow_bandwidth.wav":
+                fs = entry.get('fs')
+                Zmax = entry.get('Zmax')
+                Re = entry.get('Re')
+                Qms = entry.get('Qms')
+            else:
+                fo = entry.get('fs')
+    else:
+        print(data)  # Print error message if any
+
+    Mms = 0.15/((fs/fo)**2-1)
+
+    inner = 2*np.pi*fs
+
+    Cms = 1/((inner)**2*Mms)
+    Rms = (inner*Mms) / Qms
+    BL = np.sqrt((Zmax-Re)*Rms)
+
+    print("Mms: " + str(Mms))
+    print("Cms: " + str(Cms))
+    print("Rms: " + str(Rms))
+    print("BL: " + str(BL))
+    
+    return Mms, Cms, Rms, BL
+
+def z_model(freq, BL, Re, Rms, Cms, Mms):
+    freq = np.where(freq == 0, 1e-10, freq)  # Replace 0 with small number
+
+    # Definitions of Impedances from T/S Parameters
+    BL2 = (BL*BL)
+    Zre = Re
+    Zr = BL2 / (Rms)
+    
+    Zc = (BL2 * Cms) * (1j * 2 * np.pi * freq)    
+    Zm = 1/((Mms / (BL2))* 1j * 2 * np.pi * freq)
+
+    Z_parallel = 1.0 / (1/Zr + 1/Zc + 1/Zm) 	# Parallel connection of R, L, C
+    Z_actuator = Zre + Z_parallel			# Combining RLC in parallel with Zre in series
+
+    Z_total_magnitude = np.abs(Z_actuator) 	# Calculates the model’s total magnitude
+    Z_total_phase = np.angle(Z_actuator, deg=True)	# Calculates the model’s total phase angle
+
+    return Z_total_magnitude, Z_total_phase
+
+def plot_model(high_freq, freq, magnitude, phase, modeled_impedance, modeled_phase):
+
+    fig, axes = plt.subplots(2, 1, figsize=(10, 6), sharex=True)
+    
+    # Magnitude plot
+    axes[0].semilogx(freq, magnitude, label='measured')  # Linear magnitude
+    axes[0].semilogx(freq, modeled_impedance, label='modeled')  # Linear magnitude
+    axes[0].legend()
+    axes[0].set_ylabel("Magnitude (Ohms)")
+    axes[0].set_ylim(7, 25)  
+    axes[0].set_xlim(10, high_freq)  # Limits x-axis from 10 Hz to 500Hz
+    axes[0].grid(True, which="both", linestyle="--")
+    axes[0].set_title("Bode Plot of Impedance")
+
+    # Phase plot
+    axes[1].semilogx(freq, phase, label='measured')  # Phase in degrees
+    axes[1].semilogx(freq, modeled_phase, label='modeled')  # Phase in degrees
+    axes[1].legend()
+    axes[1].set_ylim(-90, 90)  
+    axes[1].set_xlabel("Frequency (Hz)")
+    axes[1].set_ylabel("Phase (degrees)")
+    axes[1].grid(True, which="both", linestyle="--")
+
+    plt.tight_layout()
+    plt.show()
 
 if __name__=='__main__':
     filename = None
@@ -200,14 +281,17 @@ if __name__=='__main__':
     # Q factors and plots
     if filename == "narrow_bandwidth.wav":
         Qms, Qes, Qts, Zmax, fs, Re, f1, f2 = q_factors(freq, smoothed_magnitude)
-        plot_bode(high_freq, freq, magnitude, phase, smooth_impedance, smoothed_phase, Zmax, fs, Re, f1, f2)
+        plot_bode(high_freq, freq, magnitude, phase, smoothed_magnitude, smoothed_phase, Zmax, fs, Re, f1, f2)
         save_values(filename, Zmax, fs, Re, f1, f2, Qms, Qes, Qts)
+        Mms, Cms, Rms, BL = other_factors()
+        Z_total_magnitude, Z_total_phase = z_model(freq, BL, Re, Rms, Cms, Mms)
+        plot_model(high_freq, freq, magnitude, phase, Z_total_magnitude, Z_total_phase)
     elif filename == "added_mass.wav":
         Qms, Qes, Qts, Zmax, fs, Re, f1, f2 = q_factors(freq, smoothed_magnitude, 7.51)
-        plot_bode(high_freq, freq, magnitude, phase, smooth_impedance, smoothed_phase, Zmax, fs)
+        plot_bode(high_freq, freq, magnitude, phase, smoothed_magnitude, smoothed_phase, Zmax, fs)
         save_values(filename, Zmax, fs)
     else:
-        plot_bode(high_freq, freq, magnitude, phase, smooth_impedance, smoothed_phase)
+        plot_bode(high_freq, freq, magnitude, phase, smoothed_magnitude, smoothed_phase)
 
     # time = np.linspace(0, len(voltage_signal_volts) / sample_rate, num=len(voltage_signal_volts))
     # plot_signals(time, voltage_signal_volts, current_signal_amps)
