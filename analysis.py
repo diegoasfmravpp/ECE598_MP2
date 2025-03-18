@@ -286,7 +286,7 @@ if __name__=='__main__':
         Mms, Cms, Rms, BL = other_factors()
         Z_total_magnitude, Z_total_phase = z_model(freq, BL, Re, Rms, Cms, Mms)
         plot_model(high_freq, freq, magnitude, phase, Z_total_magnitude, Z_total_phase)
-    elif filename == "added_mass.wav":
+    elif filename == "added_mass.wav"  or "light_touch.wav":
         Qms, Qes, Qts, Zmax, fs, Re, f1, f2 = q_factors(freq, smoothed_magnitude, 7.51)
         plot_bode(high_freq, freq, magnitude, phase, smoothed_magnitude, smoothed_phase, Zmax, fs)
         save_values(filename, Zmax, fs)
