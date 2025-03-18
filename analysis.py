@@ -202,7 +202,7 @@ def other_factors():
     else:
         print(data)  # Print error message if any
 
-    Mms = 0.15/((fs/fo)**2-1)
+    Mms = 0.00015/((fs/fo)**2-1)
 
     inner = 2*np.pi*fs
 
